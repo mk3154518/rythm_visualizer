@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Rhythm Visualizer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Orbitron', sans-serif;
+            background: linear-gradient(180deg, #0f0c29, #302b63, #24243e);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: start;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        header {
+            text-align: center;
+            padding: 40px 20px 10px;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 3rem;
+            color: #fff;
+            text-shadow: 0 0 15px #ff00cc;
+        }
+
+        header p {
+            margin-top: 10px;
+            color: #ccc;
+            font-size: 1.1rem;
+            text-shadow: 0 0 5px #00ffd5;
+        }
+
+        #startButton {
+            margin: 20px;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            background: #ff00cc;
+            border: none;
+            border-radius: 30px;
+            color: white;
+            cursor: pointer;
+            transition: background 0.3s;
+            box-shadow: 0 0 15px #ff00cc, 0 0 25px #00ffd5;
+        }
+
+        #startButton:hover {
+            background: #00ffd5;
+            box-shadow: 0 0 20px #00ffd5, 0 0 30px #ff00cc;
+        }
+
+        canvas {
+            border-radius: 12px;
+            box-shadow: 0 0 20px #00ffd5, 0 0 40px #ff00cc;
+            margin: 30px 0;
+        }
+
+        footer {
+            margin-top: auto;
+            padding: 20px;
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Rhythm Visualizer</h1>
+        <p>Press Start to Feel the Beat</p>
+    </header>
+
+    <button id="startButton">Start Music</button>
+
+    <canvas id="myCanvas" style="background-color: black;"></canvas>
+
+    <footer>
+        © 2025 Rhythm Visualizer | Created with ❤️ and JavaScript
+    </footer>
+
+    <!-- SOUND -->
+    <script>
+        let audioCtx;
+        let soundEnabled = false;
+
+        function setupAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                soundEnabled = true;
+            }
+        }
+
+        function playSound(frequency = 440, duration = 2) {
+            if (!soundEnabled) return;
+            const osc = audioCtx.createOscillator();
+            const envelope = audioCtx.createGain();
+            osc.connect(envelope);
+            envelope.connect(audioCtx.destination);
+
+            const now = audioCtx.currentTime;
+
+            envelope.gain.setValueAtTime(0, now);
+            envelope.gain.linearRampToValueAtTime(0.1, now + 0.05);
+            envelope.gain.linearRampToValueAtTime(0, now + duration);
+
+            osc.frequency.setValueAtTime(frequency, now);
+            osc.type = "sine"; // pure clean tone
+
+            osc.start();
+            osc.stop(now + duration);
+        }
+    </script>
+
+    <!-- TRACK -->
+    <script>
+        class Track {
+            constructor(center, radius, hue) {
+                this.center = center;
+                this.radius = radius;
+                this.hue = hue;
+                this.period = Math.PI;
+            }
+
+            getPosition(offset) {
+                return {
+                    x: this.center.x + Math.cos(offset) * this.radius,
+                    y: this.center.y - Math.abs(Math.sin(offset)) * this.radius,
+                    round: Math.floor(offset / this.period),
+                    progress: (offset % this.period) / this.period
+                };
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                const first = this.getPosition(0);
+                ctx.moveTo(first.x, first.y);
+                for (let a = 0; a < Math.PI * 2; a += 0.01) {
+                    const pos = this.getPosition(a);
+                    ctx.lineTo(pos.x, pos.y);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = `hsl(${this.hue}, 100%, 50%)`;
+                ctx.stroke();
+            }
+        }
+    </script>
+
+    <!-- BALL -->
+    <script>
+        class Ball {
+            constructor(track, radius, speed, soundFrequency, hue) {
+                this.track = track;
+                this.radius = radius;
+                this.speed = speed;
+                this.soundFrequency = soundFrequency;
+                this.hue = hue;
+                this.offset = 0;
+                this.round = 0;
+                this.progress = 0;
+                this.center = this.track.getPosition(this.offset);
+            }
+
+            move() {
+                this.offset += this.speed;
+                const res = this.track.getPosition(this.offset);
+                this.center = { x: res.x, y: res.y };
+                this.progress = res.progress;
+                if (res.round != this.round) {
+                    playSound(this.soundFrequency);
+                    this.round = res.round;
+                }
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.center.x, this.center.y, this.radius, 0, Math.PI * 2);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = "white";
+                const lightness = 100 - 50 * this.progress;
+                ctx.fillStyle = `hsl(${this.hue}, 100%, ${lightness}%)`;
+                ctx.fill();
+                ctx.stroke();
+            }
+        }
+    </script>
+
+    <!-- MAIN -->
+    <script>
+        const size = 700;
+        const myCanvas = document.getElementById('myCanvas');
+        myCanvas.width = size;
+        myCanvas.height = size / 2;
+        const ctx = myCanvas.getContext("2d");
+
+        const trackCenter = { x: size / 2, y: size / 2 };
+        const trackMinRadius = 50;
+        const trackStep = 15;
+        const ballRadius = 6;
+        const ballMinSpeed = 0.01;
+        const ballSpeedStep = -0.00005;
+
+        const soundFrequencies = [
+    369.99, // F#4
+    415.30, // G#4
+    554.37, // C#5
+    415.30, // G#4
+    369.99, // F#4
+    369.99, // F#4
+    415.30, // G#4
+    554.37, // C#5
+    415.30, // G#4
+    369.99, // F#4
+    415.30, // G#4
+    554.37, // C#5
+    415.30, // G#4
+    369.99, // F#4,
+    329.63, // E4
+    293.66, // D4
+    261.63, // C4
+    246.94, // B3
+    220.00, // A3
+    196.00  // G3
+];
+
+
+
+        const tracks = [];
+        const balls = [];
+        const N = 20;
+
+        for (let i = 0; i < N; i++) {
+            const trackRadius = trackMinRadius + i * trackStep;
+            const ballSpeed = ballMinSpeed + i * ballSpeedStep;
+            const ballSoundFrequency = soundFrequencies[i];
+            const hue = (i * 360) / N;
+            const track = new Track(trackCenter, trackRadius, hue);
+            const ball = new Ball(track, ballRadius, ballSpeed, ballSoundFrequency, hue);
+            tracks.push(track);
+            balls.push(ball);
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, size, size);
+            tracks.forEach(track => track.draw(ctx));
+            balls.forEach(ball => ball.move());
+            balls.forEach(ball => ball.draw(ctx));
+            requestAnimationFrame(animate);
+        }
+
+        document.getElementById('startButton').addEventListener('click', () => {
+            setupAudio();
+            animate();
+            document.getElementById('startButton').style.display = 'none'; // hide button after starting
+        });
+    </script>
+</body>
+
+</html>
